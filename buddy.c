@@ -1,3 +1,4 @@
+
 #include "buddy.h"
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,8 @@ static void * heap = NULL;
 static size_t lookupTableOffset = 0;
 static size_t heapSize = 0;
 
+#define BUDDY_SIDE_LEFT -1
+#define BUDDY_SIDE_RIGHT 1
 
 #define DUMP_BYTES_PER_LINE 32
 #define DUMP_BYTES_IN_GROUP 8
@@ -240,15 +243,60 @@ Address _allocateBlock(const size_t blockSize) {
 	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
 	// remove it from the list
 	_removeBlockFromList(firstBlockAddress, blockSize + 1);
+	// mark it as used
+	WRITE_ON_HEAP(firstBlockAddress + sizeof(Address), Address, 1);
 	// and return it
 	return firstBlockAddress;
+}
+
+int _getBuddySide(Address addr, const size_t blockSize) {
+	size_t rel_start = addr - sizeof(Address);
+	assert((rel_start % UNIT) == 0);
+	rel_start /= UNIT;
+	size_t parent_block_length = ((Address)1 << (blockSize));
+	if ((rel_start % parent_block_length) == 0) {
+		return BUDDY_SIDE_LEFT;
+	} else {
+		return BUDDY_SIDE_RIGHT;
+	}
+}
+
+void _addBlockToList(Address addr, size_t blockSize) {
+	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
+	if (firstBlockAddress == 0) {
+		// we are the only block
+		WRITE_FIRST_BLOCK_ADDRESS(blockSize, addr);
+		SET_ADDRESS_OF_PREVIOUS_SIBLING(addr, 0);
+		SET_ADDRESS_OF_FOLLOWING_SIBLING(addr, 0);
+	} else {
+		// add it at the beginning
+		WRITE_FIRST_BLOCK_ADDRESS(blockSize, addr);
+		SET_ADDRESS_OF_PREVIOUS_SIBLING(addr, 0);
+		SET_ADDRESS_OF_FOLLOWING_SIBLING(addr, firstBlockAddress);
+		SET_ADDRESS_OF_PREVIOUS_SIBLING(firstBlockAddress, addr);
+	}
 }
 
 /** 
  * 
  */
 void buddyFree(void * ptr) {
-	(void)ptr;
+	Address blockStart = (ptr - heap) - 4*sizeof(Address);
+	size_t blockSize = READ_FROM_HEAP(blockStart, Address);
+	int buddySide = _getBuddySide(blockStart, blockSize);
+	TRACE_DUMP("Deallocating %s buddy.", (buddySide == BUDDY_SIDE_LEFT ? "left" : "right"));
+	
+	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
+	// in all cases, mark as unused
+	WRITE_ON_HEAP(firstBlockAddress + sizeof(Address), Address, 0);
+	
+	// look whether buddy is free for possible join
+	if (0) {
+		// TODO
+	} else {
+		// insert to the list of free blocks without buddy join
+		_addBlockToList(blockStart, blockSize);
+	}
 }
 
 /**

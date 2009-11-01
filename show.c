@@ -16,6 +16,9 @@ int main(int argc, char * argv[]) {
 	array[4] = 0xFF;
 	printf("-- after malloc ---\n");
 	buddyDump();
+	printf("-- free --\n");
+	buddyFree(array);
+	buddyDump();
 	
 	return 0;
 }
