@@ -10,7 +10,7 @@ CC=gcc
 
 all: compile
 
-.PHONY: all run compile clean
+.PHONY: all run compile clean docs
 
 run: compile
 	./$(SHOW_BIN)
@@ -28,3 +28,6 @@ show.o: show.c buddy.h
 
 clean:
 	rm -f *.o $(SHOW_BIN)
+
+docs:
+	doxygen

@@ -14,19 +14,26 @@ static void * heap = NULL;
 static size_t lookupTableOffset = 0;
 static size_t heapSize = 0;
 
+/** Block is the left one in the pair. */
 #define BUDDY_SIDE_LEFT -1
+/** Block is the right one in the pair. */
 #define BUDDY_SIDE_RIGHT 1
 
+/** How many bytes are dumped per line in buddyDump(). */
 #define DUMP_BYTES_PER_LINE 32
+/** How many bytes are in group in buddyDump(). */
 #define DUMP_BYTES_IN_GROUP 8
+/** Internal unit. */
 #define UNIT 8
 
+/** Trace program flow. */
 #define TRACE_FLOW(...) \
 	do { \
 		printf("[flow]: %s", __func__); \
 		printf(__VA_ARGS__); \
 		printf(";\n"); \
 	} while (0)
+/** Debug print. */
 #define TRACE_DUMP(...) \
 	do { \
 		printf("[dump]: "); \
@@ -34,26 +41,91 @@ static size_t heapSize = 0;
 		printf("\n"); \
 	} while (0)
 
+/** 
+ * Writes given value on our heap.
+ * 
+ * @param byteOffset Offset from heap start (in bytes).
+ * @param type Written value type.
+ * @param value Value to be written.
+ * 
+ */
 #define WRITE_ON_HEAP(byteOffset, type, value) \
 	do { \
 		type * tmpHeapPointer = (type *)((Byte *)heap + (byteOffset)); \
 		*tmpHeapPointer = value; \
 	} while (0)
+
+/**
+ * Reads from our heap.
+ * 
+ * @return Value read.
+ * @param byteOffset Offset from heap start (in bytes).
+ * @param type Read value type.
+ * 
+ */
 #define READ_FROM_HEAP(byteOffset, type) \
 	(type)*(((Byte *)heap + (byteOffset)))
 
+/**
+ * Tells address of first free block of given size.
+ * 
+ * @return Address of first free block.
+ * @retval 0 No free block of given size exists.
+ * @param blockSize Block size as power of 2 exponent.
+ * 
+ */
 #define GET_FIRST_BLOCK_ADDRESS(blockSize) \
 	READ_FROM_HEAP(lookupTableOffset + (blockSize) * sizeof(Address), Address)
+	
+/**
+ * Sets address of first free block of given size.
+ * 
+ * @param blockSize Block size as power of 2 exponent.
+ * @param address Address to set.
+ * 
+ */
 #define WRITE_FIRST_BLOCK_ADDRESS(blockSize, address) \
 	WRITE_ON_HEAP(lookupTableOffset + (blockSize) * sizeof(Address), Address, (address))
 
+/**
+ * Tells address of previous sibling in block list.
+ * 
+ * @return Address of previous sibling.
+ * @retval 0 This block is the first in the list.
+ * @param baseAddress Block-in-question start address.
+ * 
+ */
 #define GET_ADDRESS_OF_PREVIOUS_SIBLING(baseAddress) \
 	READ_FROM_HEAP((baseAddress) + 2*sizeof(Address), Address)
+
+/**
+ * Tells address of following sibling in block list.
+ * 
+ * @return Address of previous sibling.
+ * @retval 0 This block is the last in the list.
+ * @param baseAddress Block-in-question start address.
+ * 
+ */
 #define GET_ADDRESS_OF_FOLLOWING_SIBLING(baseAddress) \
 	READ_FROM_HEAP((baseAddress) + 3*sizeof(Address), Address)
 
+/**
+ * Sets address of previous sibling in block list.
+ * 
+ * @param baseAddress Block-in-question start address.
+ * @param newAddress New address to be set.
+ * 
+ */
 #define SET_ADDRESS_OF_PREVIOUS_SIBLING(baseAddress, newAddress) \
 	WRITE_ON_HEAP((baseAddress) + 2*sizeof(Address), Address, newAddress)
+
+/**
+ * Sets address of following sibling in block list.
+ * 
+ * @param baseAddress Block-in-question start address.
+ * @param newAddress New address to be set.
+ * 
+ */
 #define SET_ADDRESS_OF_FOLLOWING_SIBLING(baseAddress, newAddress) \
 	WRITE_ON_HEAP((baseAddress) + 3*sizeof(Address), Address, newAddress)
 
