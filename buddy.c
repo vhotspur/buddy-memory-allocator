@@ -194,6 +194,7 @@ void _buddyInitTable(size_t sizesCount) {
  */
 void buddyDestroy() {
 	free(heap);
+	heap = NULL;
 }
 
 /** 

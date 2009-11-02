@@ -20,5 +20,7 @@ int main(int argc, char * argv[]) {
 	buddyFree(array);
 	buddyDump();
 	
+	
+	buddyDestroy();
 	return 0;
 }
