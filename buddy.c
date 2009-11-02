@@ -129,6 +129,14 @@ static size_t heapSize = 0;
 #define SET_ADDRESS_OF_FOLLOWING_SIBLING(baseAddress, newAddress) \
 	WRITE_ON_HEAP((baseAddress) + 3*sizeof(Address), Address, newAddress)
 
+
+#define MARK_BLOCK_USED(baseAddress) \
+	WRITE_ON_HEAP((baseAddress) + 1*sizeof(Address), Address, 0xEDCA10A1EDCA10A1)
+#define MARK_BLOCK_FREE(baseAddress) \
+	WRITE_ON_HEAP((baseAddress) + 1*sizeof(Address), Address, 0xEEF8EEF8EEF8EEF8)
+#define IS_BLOCK_FREE(baseAddress) \
+	((READ_FROM_HEAP((baseAddress) + 3*sizeof(Address), Address)) == 0xF8EEF8EE)
+
 void _buddyInitTable(size_t sizesCount);
 size_t _getBlockSizeNeeded(const size_t amountNeeded);
 Address _allocateBlock(const size_t blockSize);
@@ -184,7 +192,7 @@ void _buddyInitTable(size_t sizesCount) {
 	WRITE_ON_HEAP(lookupTableOffset + sizeof(Address)*sizesCount, Address, sizeof(Address));
 	// initialize the (only) block
 	WRITE_ON_HEAP(sizeof(Address)    , Address, sizesCount);
-	WRITE_ON_HEAP(sizeof(Address) * 2, Address, 0);
+	MARK_BLOCK_FREE(sizeof(Address) * 2);
 	WRITE_ON_HEAP(sizeof(Address) * 3, Address, 0);
 	WRITE_ON_HEAP(sizeof(Address) * 4, Address, 0);
 }
@@ -233,6 +241,8 @@ void _removeBlockFromList(Address addr, size_t blockSize) {
 	TRACE_FLOW("(%lu, %lu)", addr, blockSize);
 	Address previousBlockAddress = GET_ADDRESS_OF_PREVIOUS_SIBLING(addr);
 	Address nextBlockAddress = GET_ADDRESS_OF_FOLLOWING_SIBLING(addr);
+	SET_ADDRESS_OF_PREVIOUS_SIBLING(addr, ~0);
+	SET_ADDRESS_OF_FOLLOWING_SIBLING(addr, ~0);
 	
 	// extra handling for single block in the list
 	if ((previousBlockAddress == 0) && (nextBlockAddress == 0)) {
@@ -293,12 +303,12 @@ int _createBlock(const size_t blockSize) {
 		leftBlockAddress, rightBlockAddress, parentBlockAddress);
 	// set addresses and size on the left half...
 	WRITE_ON_HEAP(leftBlockAddress, Address, blockSize);
-	WRITE_ON_HEAP(leftBlockAddress + sizeof(Address), Address, 0);
+	MARK_BLOCK_FREE(leftBlockAddress);
 	SET_ADDRESS_OF_PREVIOUS_SIBLING(leftBlockAddress, 0);
 	SET_ADDRESS_OF_FOLLOWING_SIBLING(leftBlockAddress, rightBlockAddress);
 	// ... as well as on the right one
 	WRITE_ON_HEAP(rightBlockAddress, Address, blockSize);
-	WRITE_ON_HEAP(rightBlockAddress + sizeof(Address), Address, 0);
+	MARK_BLOCK_FREE(rightBlockAddress);
 	SET_ADDRESS_OF_PREVIOUS_SIBLING(rightBlockAddress, leftBlockAddress);
 	SET_ADDRESS_OF_FOLLOWING_SIBLING(rightBlockAddress, 0);
 	buddyDump();
@@ -314,10 +324,13 @@ Address _allocateBlock(const size_t blockSize) {
 	}
 	// we will get the first one
 	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
+	Address nextBlockAddress = GET_ADDRESS_OF_FOLLOWING_SIBLING(firstBlockAddress);
 	// remove it from the list
-	_removeBlockFromList(firstBlockAddress, blockSize + 1);
+	_removeBlockFromList(firstBlockAddress, blockSize);
+	// set new first block
+	WRITE_FIRST_BLOCK_ADDRESS(nextBlockAddress, blockSize);
 	// mark it as used
-	WRITE_ON_HEAP(firstBlockAddress + sizeof(Address), Address, 1);
+	MARK_BLOCK_USED(firstBlockAddress);
 	// and return it
 	return firstBlockAddress;
 }
@@ -361,7 +374,8 @@ void buddyFree(void * ptr) {
 	
 	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
 	// in all cases, mark as unused
-	WRITE_ON_HEAP(firstBlockAddress + sizeof(Address), Address, 0);
+	MARK_BLOCK_FREE(blockStart);
+	
 	
 	// look whether buddy is free for possible join
 	if (0) {
