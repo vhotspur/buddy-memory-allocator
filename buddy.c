@@ -6,7 +6,7 @@
 #include <assert.h>
 
 typedef long int Native;
-typedef unsigned long UNative;
+typedef unsigned long int UNative;
 typedef unsigned char Byte;
 typedef UNative Address;
 
@@ -64,7 +64,7 @@ static size_t heapSize = 0;
  * 
  */
 #define READ_FROM_HEAP(byteOffset, type) \
-	(type)*(((Byte *)heap + (byteOffset)))
+	((type)*((type *)(((Byte *)heap + (byteOffset)))))
 
 /**
  * Tells address of first free block of given size.
@@ -86,6 +86,30 @@ static size_t heapSize = 0;
  */
 #define WRITE_FIRST_BLOCK_ADDRESS(blockSize, address) \
 	WRITE_ON_HEAP(lookupTableOffset + (blockSize) * sizeof(Address), Address, (address))
+
+/**
+ * Tells block size as power of 2 exponent.
+ * 
+ * @return Block size.
+ * @param baseAddress Block-in-question start address.
+ * 
+ */
+#define GET_BLOCK_SIZE(baseAddress) \
+	READ_FROM_HEAP(baseAddress, Address)
+
+/**
+ * Sets block size as power of 2 exponent.
+ * 
+ * @param baseAddress Block-in-question start address.
+ * @param blockSize Block size as power of 2 exponent.
+ * 
+ */
+#define SET_BLOCK_SIZE(baseAddress, blockSize) \
+	WRITE_ON_HEAP(baseAddress, Address, (blockSize))
+
+/** Maximum block size as power of 2 exponent. */
+#define MAX_BLOCK_SIZE \
+	(READ_FROM_HEAP(lookupTableOffset, Address))
 
 /**
  * Tells address of previous sibling in block list.
@@ -134,8 +158,16 @@ static size_t heapSize = 0;
 	WRITE_ON_HEAP((baseAddress) + 1*sizeof(Address), Address, 0xEDCA10A1EDCA10A1)
 #define MARK_BLOCK_FREE(baseAddress) \
 	WRITE_ON_HEAP((baseAddress) + 1*sizeof(Address), Address, 0xEEF8EEF8EEF8EEF8)
+
+/**
+ * Tells whether block is free.
+ * 
+ * @return Whether block is free.
+ * @param baseAddress Block-in-question start address.
+ * 
+ */
 #define IS_BLOCK_FREE(baseAddress) \
-	((READ_FROM_HEAP((baseAddress) + 3*sizeof(Address), Address)) == 0xF8EEF8EE)
+	((READ_FROM_HEAP((baseAddress) + 1*sizeof(Address), Address)) == (Address)0xEEF8EEF8EEF8EEF8)
 
 void _buddyInitTable(size_t sizesCount);
 size_t _getBlockSizeNeeded(const size_t amountNeeded);
@@ -241,8 +273,8 @@ void _removeBlockFromList(Address addr, size_t blockSize) {
 	TRACE_FLOW("(%lu, %lu)", addr, blockSize);
 	Address previousBlockAddress = GET_ADDRESS_OF_PREVIOUS_SIBLING(addr);
 	Address nextBlockAddress = GET_ADDRESS_OF_FOLLOWING_SIBLING(addr);
-	SET_ADDRESS_OF_PREVIOUS_SIBLING(addr, ~0);
-	SET_ADDRESS_OF_FOLLOWING_SIBLING(addr, ~0);
+	SET_ADDRESS_OF_PREVIOUS_SIBLING(addr, ~((Address)0));
+	SET_ADDRESS_OF_FOLLOWING_SIBLING(addr, ~((Address)0));
 	
 	// extra handling for single block in the list
 	if ((previousBlockAddress == 0) && (nextBlockAddress == 0)) {
@@ -347,6 +379,20 @@ int _getBuddySide(Address addr, const size_t blockSize) {
 	}
 }
 
+Address _getBuddyAddress(Address blockStart, const size_t blockSize) {
+	size_t blockLength = ((Address)1 << (blockSize-1));
+	blockLength *= UNIT;
+	int buddySide = _getBuddySide(blockStart, blockSize);
+	switch (buddySide) {
+		case BUDDY_SIDE_LEFT:
+			return blockStart + blockLength;
+		case BUDDY_SIDE_RIGHT:
+			return blockStart - blockLength;
+		default:
+			assert(0);
+	}
+}
+
 void _addBlockToList(Address addr, size_t blockSize) {
 	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
 	if (firstBlockAddress == 0) {
@@ -363,27 +409,43 @@ void _addBlockToList(Address addr, size_t blockSize) {
 	}
 }
 
+
 /** 
  * 
  */
 void buddyFree(void * ptr) {
-	Address blockStart = (ptr - heap) - 4*sizeof(Address);
-	size_t blockSize = READ_FROM_HEAP(blockStart, Address);
+	Address blockStart = (Address)(ptr - heap) - 4*sizeof(Address);
+	size_t blockSize = GET_BLOCK_SIZE(blockStart);
+	Address buddyAddress = _getBuddyAddress(blockStart, blockSize);
 	int buddySide = _getBuddySide(blockStart, blockSize);
-	TRACE_DUMP("Deallocating %s buddy.", (buddySide == BUDDY_SIDE_LEFT ? "left" : "right"));
+	TRACE_DUMP("Deallocating %s buddy (neighbour at %lu).", 
+		(buddySide == BUDDY_SIDE_LEFT ? "left" : "right"), buddyAddress);
 	
-	Address firstBlockAddress = GET_FIRST_BLOCK_ADDRESS(blockSize);
 	// in all cases, mark as unused
 	MARK_BLOCK_FREE(blockStart);
 	
 	
-	// look whether buddy is free for possible join
-	if (0) {
-		// TODO
-	} else {
-		// insert to the list of free blocks without buddy join
-		_addBlockToList(blockStart, blockSize);
+	// while buddy is free, merge them and go one level up
+	while (IS_BLOCK_FREE(buddyAddress)) {
+		TRACE_DUMP("Merging...");
+		// deattach the buddy
+		_removeBlockFromList(buddyAddress, blockSize);
+		
+		// find the new block start
+		blockStart = buddyAddress < blockStart ? buddyAddress : blockStart;
+
+		blockSize++;
+		// look for parent one
+		if (MAX_BLOCK_SIZE == blockSize) {
+			// at the very top, heap is completely free
+			break;
+		}
+		buddyAddress = _getBuddyAddress(blockStart, blockSize);
+		TRACE_DUMP("New block start is %lu, buddy at %lu.", blockStart, buddyAddress);
 	}
+	
+	SET_BLOCK_SIZE(blockStart, blockSize);
+	_addBlockToList(blockStart, blockSize);
 }
 
 /**
